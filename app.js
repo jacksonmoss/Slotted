@@ -11,6 +11,13 @@ const ICON = {
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>',
 };
 
+const KIND_LABEL = { any: 'Any', focus: 'Focus', light: 'Light' };
+const KIND_HELP = {
+  any: 'Takes any task.',
+  focus: 'Kept for deep work. Quick tasks and errands go here only when no other box has room or a due date forces it.',
+  light: 'For quick tasks and errands. Deep work goes here only when no other box has room or a due date forces it.',
+};
+
 const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -22,8 +29,8 @@ function defaultState() {
     tasks: [],
     categories: ['Work', 'School', 'Home', 'Errands', 'Fitness', 'Personal'].map((name, i) => ({ name, slot: i + 1 })),
     boxes: [
-      { id: uid(), name: 'Weeknights', days: [1, 2, 3, 4, 5], start: '19:00', end: '21:00', categories: [] },
-      { id: uid(), name: 'Weekend mornings', days: [0, 6], start: '08:00', end: '12:00', categories: [] },
+      { id: uid(), name: 'Weeknights', days: [1, 2, 3, 4, 5], start: '19:00', end: '21:00', categories: [], kind: 'any' },
+      { id: uid(), name: 'Weekend mornings', days: [0, 6], start: '08:00', end: '12:00', categories: [], kind: 'any' },
     ],
     skips: {},
   };
@@ -223,7 +230,7 @@ function renderWelcome() {
   return `<section class="welcome">
     <h2>Add what's on your plate</h2>
     <p>Slotted fits your tasks into your time boxes, most urgent first. Your boxes are ${esc(boxSummary())}. Change them in Setup.</p>
-    <p>Type in the bar below. You can add a length, a due date or a repeat right in the text:</p>
+    <p>Type in the bar below, or tap the mic on your keyboard and say it. You can add a length, a due date or a repeat right in the text:</p>
     <div class="chips">
       <button class="example" data-action="example" data-text="Read chapter 4 45m by thu">Read chapter 4 45m by thu</button>
       <button class="example" data-action="example" data-text="Long run 1h30 every sat">Long run 1h30 every sat</button>
@@ -257,6 +264,7 @@ function renderBox(slot, nextItemId) {
     <div class="boxhead">
       <h2 class="boxname">${esc(slot.boxName)}</h2>
       <span class="boxtime">${esc(rangeLabel(slot.fullStart, slot.end))}</span>
+      ${slot.kind && slot.kind !== 'any' ? `<span class="boxkind">${KIND_LABEL[slot.kind]}</span>` : ''}
       <span class="boxfree ${open ? '' : 'full'}">${open ? `${E.durLabel(open)} open` : 'Full'}</span>
     </div>
     <div class="gauge" role="img" aria-label="${esc(label)}">${segs.join('')}</div>
@@ -606,7 +614,12 @@ function renderBoxEditor(b) {
       <label class="visually-hidden" for="bs-${b.id}">Starts</label><input class="input" type="time" id="bs-${b.id}" data-box="${b.id}" data-bf="start" value="${b.start}">
       <span class="muted">to</span>
       <label class="visually-hidden" for="be-${b.id}">Ends</label><input class="input" type="time" id="be-${b.id}" data-box="${b.id}" data-bf="end" value="${b.end}"></div></div>
-    <div class="field"><span class="lbl">Accepts</span><div class="chips">
+    <div class="field"><span class="lbl">Kind</span>
+      <div class="segmented" role="group" aria-label="Kind">${['any', 'focus', 'light']
+        .map((k) => `<button data-action="box-kind" data-box="${b.id}" data-value="${k}" aria-pressed="${(b.kind || 'any') === k}">${KIND_LABEL[k]}</button>`)
+        .join('')}</div>
+      <p class="suggested">${KIND_HELP[b.kind || 'any']}</p></div>
+      <div class="field"><span class="lbl">Accepts</span><div class="chips">
       <button class="chip" data-action="box-cat" data-box="${b.id}" data-value="" aria-pressed="${any}">Any category</button>${cats}</div></div>
     <div class="boxtools"><button class="textbtn danger" data-action="box-delete" data-box="${b.id}">Delete box</button></div>
   </div>`;
@@ -662,6 +675,7 @@ function draftFromTask(t) {
     recur: t.recur ? { ...t.recur } : null,
     splittable: t.splittable !== false,
     notes: t.notes || '',
+    type: t.type || null,
   };
 }
 
@@ -677,6 +691,7 @@ function draftFromText(text) {
     recur: p.recur || null,
     splittable: true,
     notes: '',
+    type: null,
   };
   const touched = { category: !!draft.category, duration: !!p.durationMin, importance: !!p.importance };
   return { draft, touched, newCategory: p.categoryTag && !draft.category ? capitalize(p.categoryTag) : null };
@@ -745,6 +760,20 @@ const REGIONS = {
       <button type="button" data-action="d-step" data-value="-5" aria-label="5 minutes less">−</button>
       <output aria-live="polite">${E.durLabel(d.durationMin)}</output>
       <button type="button" data-action="d-step" data-value="5" aria-label="5 minutes more">+</button></div></div>${adj}`;
+  },
+  type: (sh) => {
+    const d = sh.draft;
+    const guess = E.inferTaskType({ title: d.title, durationMin: d.durationMin, category: d.category });
+    const current = d.type || guess;
+    const buttons = [
+      ['focus', 'Focus'],
+      ['light', 'Light'],
+      ['either', 'Either'],
+    ]
+      .map(([v, l]) => `<button type="button" data-action="d-type" data-value="${v}" aria-pressed="${current === v}">${l}</button>`)
+      .join('');
+    const note = d.type ? '' : '<p class="suggested">Guessed from the title, length and category. Focus work stays out of Light boxes, and quick tasks out of Focus boxes.</p>';
+    return `<div class="segmented" role="group" aria-label="Kind of work">${buttons}</div>${note}`;
   },
   importance: (sh) => {
     const d = sh.draft;
@@ -825,6 +854,7 @@ function taskSheet(sh) {
       <div class="field" style="margin-top:16px"><span class="lbl">Category</span>${region('category', sh, 'div', 'chips')}</div>
       <div class="field"><span class="lbl">How long</span>${region('duration', sh)}</div>
       <div class="field"><span class="lbl">Priority</span>${region('importance', sh, 'div', 'segmented')}</div>
+      <div class="field"><span class="lbl">Kind of work</span>${region('type', sh)}</div>
       <div class="field"><label for="d-deadline">Due</label><div class="dateline">
         <input id="d-deadline" class="input" type="date" data-df="deadline" value="${esc(d.deadline)}">
         ${d.deadline ? '<button type="button" class="textbtn" data-action="d-clear" data-value="deadline">Clear</button>' : ''}</div></div>
@@ -859,6 +889,7 @@ function saveTaskSheet() {
     recur: d.recur,
     splittable: d.splittable,
     notes: d.notes || '',
+    type: d.type || null,
     guessed: { category: false, duration: false, importance: false },
   };
   let id = sh.id;
@@ -989,11 +1020,18 @@ function updatePreview() {
   if (!text.trim()) {
     qaPreview.innerHTML =
       document.activeElement === qaInput
-        ? '<p class="hint" style="margin:0">Add details as you type: <b>45m</b> or <b>1h30</b>, <b>by fri</b>, <b>daily</b> or <b>every sat</b>, <b>#work</b>, <b>!</b> for high priority.</p>'
+        ? '<p class="hint" style="margin:0">Add details as you type, like <b>45m</b>, <b>by fri</b>, <b>daily</b>, <b>#work</b> or <b>!</b> for high priority. Or tap the mic on your keyboard and say it. Each sentence becomes its own task.</p>'
         : '';
     return;
   }
-  const { draft, touched, newCategory } = draftFromText(text);
+  const entries = E.splitEntries(text);
+  if (entries.length > 1) {
+    qaPreview.innerHTML =
+      `<span class="pv">${entries.length} tasks</span>` +
+      entries.map((e) => `<span class="pv sug">${esc(draftFromText(e).draft.title || e)}</span>`).join('');
+    return;
+  }
+  const { draft, touched, newCategory } = draftFromText(entries[0] || text);
   const sh = { draft, touched, newCategory };
   applySuggestions(sh);
   const chips = [];
@@ -1001,29 +1039,29 @@ function updatePreview() {
   if (cat) chips.push(`<span class="pv cat ${touched.category || newCategory ? '' : 'sug'}" style="${catStyle(cat)}">${esc(cat)}</span>`);
   else chips.push('<span class="pv sug">No category</span>');
   if (draft.durationMin) chips.push(`<span class="pv ${touched.duration ? '' : 'sug'}">${E.durLabel(draft.durationMin)}</span>`);
-  if (draft.deadline) chips.push(`<span class="pv">Due ${esc(phrase(draft.deadline))}</span>`);
-  if (draft.notBefore) chips.push(`<span class="pv">From ${esc(phrase(draft.notBefore))}</span>`);
+  if (draft.deadline && draft.notBefore === draft.deadline) chips.push(`<span class="pv">On ${esc(phrase(draft.deadline))}</span>`);
+  else {
+    if (draft.notBefore) chips.push(`<span class="pv">From ${esc(phrase(draft.notBefore))}</span>`);
+    if (draft.deadline) chips.push(`<span class="pv">Due ${esc(phrase(draft.deadline))}</span>`);
+  }
   if (draft.recur) chips.push(`<span class="pv">${recurLabel(draft.recur)}</span>`);
   if (draft.importance === 3) chips.push(`<span class="pv ${touched.importance ? '' : 'sug'}">High priority</span>`);
   if (draft.importance === 1) chips.push(`<span class="pv ${touched.importance ? '' : 'sug'}">Low priority</span>`);
+  const type = E.inferTaskType({ title: draft.title, durationMin: draft.durationMin, category: cat });
+  if (type !== 'either') chips.push(`<span class="pv sug">${KIND_LABEL[type]}</span>`);
   qaPreview.innerHTML = chips.join('');
 }
 
-function quickAdd() {
-  const text = qaInput.value.trim();
-  if (!text) return;
-  const { draft, touched, newCategory } = draftFromText(text);
-  if (!draft.title) {
-    showToast('Add a title, like "Pay rent by fri".');
-    return;
-  }
+/** Build a task from one quick-add entry, with suggestions filled in for anything not stated. */
+function taskFromEntry(entry) {
+  const { draft, touched, newCategory } = draftFromText(entry);
+  if (!draft.title) return null;
   const sh = { draft, touched, newCategory };
   applySuggestions(sh);
-  const id = uid();
-  commit((s) => {
-    if (newCategory && !s.categories.some((c) => c.name === newCategory)) addCategoryTo(s, newCategory);
-    s.tasks.push({
-      id,
+  return {
+    newCategory,
+    task: {
+      id: uid(),
       title: draft.title,
       category: newCategory || draft.category || null,
       durationMin: draft.durationMin || 30,
@@ -1039,11 +1077,35 @@ function quickAdd() {
       history: {},
       skipped: {},
       guessed: { category: !touched.category && !newCategory && !!draft.category, duration: !touched.duration, importance: !touched.importance },
-    });
-  });
+    },
+  };
+}
+
+function quickAdd() {
+  const text = qaInput.value.trim();
+  if (!text) return;
+  const built = E.splitEntries(text).map(taskFromEntry).filter(Boolean);
+  if (!built.length) {
+    showToast('Add a title, like "Pay rent by fri".');
+    return;
+  }
+  commit(
+    (s) => {
+      for (const { task, newCategory } of built) {
+        if (newCategory && !s.categories.some((c) => c.name === newCategory)) addCategoryTo(s, newCategory);
+        s.tasks.push(task);
+      }
+    },
+    { undo: built.length > 1 }
+  );
   qaInput.value = '';
   updatePreview();
-  showToast(placementMessage(id, 'Added'), { label: 'Edit', fn: () => openTaskSheet(id) });
+  if (built.length === 1) {
+    const id = built[0].task.id;
+    showToast(placementMessage(id, 'Added'), { label: 'Edit', fn: () => openTaskSheet(id) });
+  } else {
+    showToast(`Added ${built.length} tasks.`, { label: 'Undo', fn: undo });
+  }
 }
 
 /* ================================================================ toast */
@@ -1169,17 +1231,21 @@ document.addEventListener('click', (e) => {
     case 'd-cat':
       sh.draft.category = el.dataset.value || null;
       sh.touched.category = true;
-      refreshRegions('category', 'suggest', 'duration');
+      refreshRegions('category', 'suggest', 'duration', 'type');
       break;
     case 'd-dur':
       sh.draft.durationMin = Number(el.dataset.value);
       sh.touched.duration = true;
-      refreshRegions('duration', 'suggest');
+      refreshRegions('duration', 'suggest', 'type');
       break;
     case 'd-step':
       sh.draft.durationMin = Math.min(720, Math.max(5, (sh.draft.durationMin || 30) + Number(el.dataset.value)));
       sh.touched.duration = true;
-      refreshRegions('duration', 'suggest');
+      refreshRegions('duration', 'suggest', 'type');
+      break;
+    case 'd-type':
+      sh.draft.type = el.dataset.value;
+      refreshRegions('type');
       break;
     case 'd-imp':
       sh.draft.importance = Number(el.dataset.value);
@@ -1241,6 +1307,11 @@ document.addEventListener('click', (e) => {
         const b = s.boxes.find((x) => x.id === el.dataset.box);
         const d = Number(el.dataset.day);
         b.days = b.days.includes(d) ? b.days.filter((x) => x !== d) : [...b.days, d].sort();
+      });
+      break;
+    case 'box-kind':
+      commit((s) => {
+        s.boxes.find((x) => x.id === el.dataset.box).kind = el.dataset.value;
       });
       break;
     case 'box-cat':
@@ -1325,6 +1396,7 @@ document.addEventListener('input', (e) => {
       applySuggestions(sh);
       refreshRegions('suggest', 'category', 'duration', 'importance');
     }
+    if (f === 'title') refreshRegions('type');
   }
   if (sh && el.dataset.cf) {
     if (el.dataset.cf === 'progress') {

@@ -1,6 +1,6 @@
 // Offline support: serve the app from cache, refresh the cache in the background.
 // Bump VERSION when you deploy changes so old caches get cleared.
-const VERSION = 'slotted-v1';
+const VERSION = 'slotted-v2';
 const ASSETS = [
   './',
   './index.html',

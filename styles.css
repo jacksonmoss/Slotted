@@ -167,6 +167,8 @@ h2.section .count { font-stretch: 75%; font-weight: 600; color: var(--ink-3); }
 .boxhead { display: flex; align-items: baseline; gap: 10px; padding: 0 2px; }
 .boxname { font-weight: 700; font-size: 17px; margin: 0; }
 .boxtime { font-stretch: 75%; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.boxkind { font-size: 13px; font-weight: 650; font-stretch: 85%; color: var(--ink-2); border: 1px solid var(--rule); border-radius: 999px; padding: 1px 8px; align-self: center; }
+.field .segmented { margin-bottom: 0; }
 .boxfree { margin-left: auto; font-stretch: 80%; font-weight: 600; font-size: 14px; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .boxfree.full { color: var(--ink-2); }
 
